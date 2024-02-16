@@ -58,7 +58,7 @@
     "mini-css-extract-plugin": "^2.9.0",
     "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",
-    "powerbi-visuals-webpack-plugin": "4.1.0",
+    "powerbi-visuals-webpack-plugin": "https://github.com/VD-ISW/powerbi-visuals-webpack-plugin.git#poweron\/put_back_the_external_js_feature",
     "process": "^0.11.10",
     "punycode": "^2.3.1",
     "querystring-es3": "^0.2.1",
