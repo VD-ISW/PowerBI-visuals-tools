@@ -6,3 +6,5 @@ lib
 spec/.tmp
 /certs
 /testGround
+*.iml
+.idea/
