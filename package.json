@@ -92,7 +92,7 @@
   "overrides": {
     "webpack": {
       "@types/eslint-scope": {
-        "@types/eslint": "$@types/eslint"
+        "@types/eslint": "^8.56.10"
       }
     }
   },
