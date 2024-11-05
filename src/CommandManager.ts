@@ -7,6 +7,7 @@ import { WebpackOptions } from './WebPackWrap.js';
 export interface LintOptions {
     verbose: boolean;
     fix: boolean;
+    useDefault: boolean;
 }
 
 interface StartOptions {
@@ -29,6 +30,7 @@ interface PackageOptions {
     verbose: boolean;
     fix: boolean;
     pbivizFile: string;
+    useDefault: boolean;
 }
 
 interface NewOptions {
@@ -88,6 +90,7 @@ export default class CommandManager {
         const lintOptions: LintOptions = {
             verbose: options.verbose,
             fix: options.fix,
+            useDefault: options.useDefault
         }
         const visual = new VisualManager(rootPath).prepareVisual(options.pbivizFile)
         await visual.runLintValidation(lintOptions)

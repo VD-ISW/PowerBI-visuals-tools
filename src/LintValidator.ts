@@ -3,20 +3,24 @@ import powerbiPlugin from 'eslint-plugin-powerbi-visuals';
 import ConsoleWriter from "./ConsoleWriter.js";
 import { LintOptions } from "./CommandManager.js";
 import { getRootPath } from "./utils.js";
+import path from "path";
+import fs from 'fs-extra';
 
 export class LintValidator {
 
-    private visualPath: string;
+    private readonly visualPath: string;
     private rootPath: string;
-    private isVerboseMode: boolean;
-    private shouldFix: boolean;
+    private readonly isVerboseMode: boolean;
+    private readonly useDefault: boolean;
+    private readonly shouldFix: boolean;
     private config: ESLint.Options;
     private linterInstance: ESLint;
 
-    constructor({verbose, fix}: LintOptions) {
+    constructor({verbose, fix, useDefault}: LintOptions) {
         this.visualPath = process.cwd()
         this.rootPath = getRootPath();
         this.isVerboseMode = verbose;
+        this.useDefault = useDefault;
         this.shouldFix = fix;
 
         this.prepareConfig();
@@ -60,11 +64,17 @@ export class LintValidator {
     }
 
     private prepareConfig() {
-        ConsoleWriter.warning("Using recommended eslint config.")
+        const eslintConfigExtensions = [".js", ".mjs", ".cjs"];
         this.config = {
-            overrideConfig: powerbiPlugin.configs.recommended,
-            overrideConfigFile: true,
             fix: this.shouldFix,
+        }
+        if (
+            this.useDefault
+            || !eslintConfigExtensions.some(el => fs.existsSync(path.join(this.visualPath, `eslint.config${el}`)))
+        ) {
+            ConsoleWriter.warning("Using recommended eslint config.")
+            this.config.overrideConfig = powerbiPlugin.configs.recommended;
+            this.config.overrideConfigFile = true;
         }
     }
 }
