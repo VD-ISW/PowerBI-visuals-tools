@@ -95,7 +95,6 @@ export default class WebPackWrap {
     }
 
     async compileTypeScript7(visualPackage, tsconfig) {
-        const compilationStartedAt = performance.now();
         const temporaryConfigPath = this.getTypeScript7ConfigPath(visualPackage);
         const visualPluginPath = path.join(visualPackage.basePath, config.build.precompileFolder, visualPlugin);
         const configuredFiles = tsconfig.files.map(file =>
@@ -129,8 +128,6 @@ export default class WebPackWrap {
         await execFile(process.execPath, [compilerPath, "--project", temporaryConfigPath], {
             cwd: visualPackage.basePath
         });
-
-        ConsoleWriter.info(`TypeScript 7 precompile completed in ${(performance.now() - compilationStartedAt).toFixed(0)} ms`);
     }
 
     configureTypeScript7Precompilation(visualPackage, tsconfig) {
