@@ -31,6 +31,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
     "@typescript-eslint/parser": "^8.50.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "async": "^3.2.6",
     "chalk": "^5.4.1",
     "commander": "^14.0.3",
@@ -49,10 +50,10 @@
     "lodash.ismatch": "^4.4.0",
     "mini-css-extract-plugin": "^2.10.2",
     "powerbi-visuals-webpack-plugin": "https://github.com/VD-ISW/powerbi-visuals-webpack-plugin.git#3f0fbcb0ada502437ca4c17a17b56865e6e0f3f3",
+    "source-map-loader": "^5.0.0",
     "terser-webpack-plugin": "^5.6.1",
-    "ts-loader": "^9.5.4",
-    "typescript": "^6.0.3",
-    "webpack": "^5.107.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "webpack": "^5.110.3",
     "webpack-bundle-analyzer": "5.3.1",
     "webpack-dev-server": "^6.0.0",
     "zod": "^4.3.6"

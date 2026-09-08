@@ -46,7 +46,7 @@ interface NewOptions {
 }
 
 export default class CommandManager {
-    private static readonly SOURCE_MAP_TYPE = "eval-cheap-source-map";
+    private static readonly SOURCE_MAP_TYPE = "eval-cheap-module-source-map";
 
     public static async start(options: StartOptions, rootPath: string) {
         const webpackOptions: WebpackOptions = {

@@ -6,13 +6,14 @@ import path from 'path';
 import webpack from 'webpack';
 import util from 'util';
 const exec = util.promisify(processExec);
-import { exec as processExec } from 'child_process';
+const execFile = util.promisify(processExecFile);
+import { exec as processExec, execFile as processExecFile } from 'child_process';
 import lodashCloneDeep from 'lodash.clonedeep';
 import { BundleAnalyzerPlugin } from 'webpack-bundle-analyzer';
 import { PowerBICustomVisualsWebpackPlugin, LocalizationLoader } from 'powerbi-visuals-webpack-plugin';
 import ConsoleWriter from './ConsoleWriter.js';
 import { resolveCertificate } from "./CertificateTools.js";
-import { readJsonFromRoot, readJsonFromVisual } from './utils.js'
+import { getRootPath, readJsonFromRoot, readJsonFromVisual } from './utils.js'
 
 const config = await readJsonFromRoot('config.json');
 const npmPackage = await readJsonFromRoot('package.json');
@@ -87,6 +88,121 @@ export default class WebPackWrap {
         }
     }
 
+    getTypeScript7ConfigPath(visualPackage) {
+        return path.join(visualPackage.basePath, ".tmp", "ts7config.json");
+    }
+
+    async compileTypeScript7(visualPackage, tsconfig) {
+        const compilationStartedAt = performance.now();
+        const temporaryConfigPath = this.getTypeScript7ConfigPath(visualPackage);
+        const visualPluginPath = path.join(visualPackage.basePath, config.build.precompileFolder, visualPlugin);
+        const configuredFiles = tsconfig.files.map(file =>
+            path.relative(path.dirname(temporaryConfigPath), path.resolve(visualPackage.basePath, file))
+        );
+
+        const temporaryConfig = {
+            extends: path.relative(path.dirname(temporaryConfigPath), path.join(visualPackage.basePath, "tsconfig.json")),
+            compilerOptions: {
+                outDir: "./ts7-build",
+                rootDir: "..",
+                noEmit: false,
+                sourceMap: true,
+                incremental: true,
+                tsBuildInfoFile: "./ts7-build/.tsbuildinfo"
+            },
+            files: [
+                ...configuredFiles,
+                path.relative(path.dirname(temporaryConfigPath), visualPluginPath)
+            ]
+        };
+        const existingConfig = await fs.pathExists(temporaryConfigPath)
+            ? await fs.readJson(temporaryConfigPath)
+            : undefined;
+        if (JSON.stringify(existingConfig) !== JSON.stringify(temporaryConfig)) {
+            await fs.writeJson(temporaryConfigPath, temporaryConfig);
+        }
+
+        const compilerPath = path.join(getRootPath(), "node_modules", "@typescript", "native", "bin", "tsc");
+        await execFile(process.execPath, [compilerPath, "--project", temporaryConfigPath], {
+            cwd: visualPackage.basePath
+        });
+
+        ConsoleWriter.info(`TypeScript 7 precompile completed in ${(performance.now() - compilationStartedAt).toFixed(0)} ms`);
+    }
+
+    configureTypeScript7Precompilation(visualPackage, tsconfig) {
+        this.webpackConfig.plugins.push({
+            apply: (compiler: webpack.Compiler) => {
+                compiler.hooks.beforeRun.tapPromise(
+                    "CompileTypeScript7",
+                    () => this.compileTypeScript7(visualPackage, tsconfig)
+                );
+                compiler.hooks.watchRun.tapPromise(
+                    "CompileTypeScript7",
+                    () => {
+                        const changedFiles = compiler.modifiedFiles;
+                        const temporaryPath = path.join(visualPackage.basePath, ".tmp");
+                        const onlyGeneratedFilesChanged = changedFiles?.size > 0
+                            && [...changedFiles].every(file => {
+                                const relativePath = path.relative(temporaryPath, file);
+                                return !relativePath
+                                    || (!relativePath.startsWith(`..${path.sep}`)
+                                        && relativePath !== ".."
+                                        && !path.isAbsolute(relativePath));
+                            });
+
+                        return onlyGeneratedFilesChanged
+                            ? Promise.resolve()
+                            : this.compileTypeScript7(visualPackage, tsconfig);
+                    }
+                );
+                compiler.hooks.afterCompile.tap("WatchTypeScriptSources", (compilation) => {
+                    compilation.contextDependencies.add(path.join(visualPackage.basePath, "src"));
+                });
+            }
+        });
+    }
+
+    configureTypeScript7DependencyResolution(visualPackage) {
+        const outputPath = path.join(visualPackage.basePath, ".tmp", "ts7-build");
+        this.webpackConfig.plugins.push(
+            new webpack.NormalModuleReplacementPlugin(/./, resource => {
+                // TS emits JavaScript only; resolve missing static dependencies from the source project.
+                const relativeContext = path.relative(outputPath, resource.context);
+                const isGeneratedContext = !relativeContext.startsWith(`..${path.sep}`)
+                    && relativeContext !== ".."
+                    && !path.isAbsolute(relativeContext);
+
+                if (!isGeneratedContext) {
+                    return;
+                }
+
+                if (resource.request.includes("!")) {
+                    return;
+                }
+
+                const originalContext = path.join(visualPackage.basePath, relativeContext);
+                if (!resource.request.startsWith(".")) {
+                    resource.context = originalContext;
+                    return;
+                }
+
+                const generatedRequest = path.resolve(resource.context, resource.request);
+                if (fs.existsSync(generatedRequest)) {
+                    return;
+                }
+
+                const originalRequest = path.resolve(
+                    visualPackage.basePath,
+                    path.relative(outputPath, generatedRequest)
+                );
+                if (fs.existsSync(originalRequest)) {
+                    resource.request = originalRequest;
+                }
+            })
+        );
+    }
+
     enableOptimization() {
         this.webpackConfig.mode = "production";
         this.webpackConfig.optimization.concatenateModules = false;
@@ -118,20 +234,15 @@ export default class WebPackWrap {
     }
 
     configureVisualPlugin(options, tsconfig, visualPackage) {
-        const visualJSFilePath = tsconfig.compilerOptions.out || tsconfig.compilerOptions.outDir;
         this.webpackConfig.output.path = path.join(visualPackage.basePath, config.build.dropFolder);
         this.webpackConfig.output.filename = "[name]";
-        const visualPluginPath = path.join(process.cwd(), config.build.precompileFolder, visualPlugin);
+        const visualPluginPath = path.join(visualPackage.basePath, ".tmp", "ts7-build", config.build.precompileFolder, visualPlugin.replace(/\.ts$/, ".js"));
         this.webpackConfig.watchOptions.ignored.push(visualPluginPath)
-        if (tsconfig.compilerOptions.out) {
-            this.webpackConfig.entry = {
-                "visual.js": visualJSFilePath
-            };
-        } else {
-            this.webpackConfig.entry["visual.js"] = [visualPluginPath];
-            this.webpackConfig.output.library = `${this.pbiviz.visual.guid}${options.devMode ? "_DEBUG" : ""}`;
-            this.webpackConfig.output.libraryTarget = 'var';
-        }
+        this.webpackConfig.entry = {
+            "visual.js": [visualPluginPath]
+        };
+        this.webpackConfig.output.library = `${this.pbiviz.visual.guid}${options.devMode ? "_DEBUG" : ""}`;
+        this.webpackConfig.output.libraryTarget = 'var';
     }
 
     async getEnvironmentDetails() {
@@ -231,15 +342,6 @@ export default class WebPackWrap {
             }
         );
 
-        if (options.devMode && options.devtool && this.webpackConfig.devServer.port) {
-            this.webpackConfig.plugins.push(
-                new webpack.SourceMapDevToolPlugin({
-                    filename: '[file].map',
-                    publicPath: `https://localhost:${this.webpackConfig.devServer.port}/assets/`
-                })
-            );
-        }
-
         if (options.provideJquery) {
             this.webpackConfig.plugins.push(
                 new webpack.ProvidePlugin({
@@ -252,23 +354,16 @@ export default class WebPackWrap {
     }
 
     async configureLoaders({
-        fast = false,
-        includeAllLocales = false
+        includeAllLocales = false,
+        typescript7OutputPath
     }) {
         this.webpackConfig.module.rules.push({
-            test: /(\.ts)x?$/,
-            use: [
-                {
-                    loader: "ts-loader",
-                    options: fast 
-                        ? {
-                            transpileOnly: false,
-                            experimentalWatchApi: false
-                        } 
-                        : {}
-                }
-            ]
+            enforce: "pre",
+            include: typescript7OutputPath,
+            test: /\.js$/,
+            use: ["source-map-loader"]
         });
+
         if(!includeAllLocales){
             this.webpackConfig.module.rules.push({ 
                 test: /powerbiGlobalizeLocales\.js$/, // path to file with all locales declared in formattingutils
@@ -300,10 +395,15 @@ export default class WebPackWrap {
         await this.appendPlugins(options, visualPackage, tsconfig);
         await this.configureDevServer(visualPackage, options.devServerPort);
         await this.configureVisualPlugin(options, tsconfig, visualPackage);
+        this.configureTypeScript7Precompilation(visualPackage, tsconfig);
+        this.configureTypeScript7DependencyResolution(visualPackage);
         await this.configureLoaders({
-            fast: options.fast,
-            includeAllLocales: options.allLocales
+            includeAllLocales: options.allLocales,
+            typescript7OutputPath: path.join(visualPackage.basePath, ".tmp", "ts7-build")
         });
+        this.webpackConfig.experiments = {
+            typescript: true,
+        }
 
         return this.webpackConfig;
     }
@@ -331,7 +431,7 @@ export default class WebPackWrap {
         cache: false,
         fast: false,
         compression: 0,
-        stats: true,
+        stats: false,
         skipApiCheck: false,
         allLocales: false,
         pbivizFile: 'pbiviz.json',
