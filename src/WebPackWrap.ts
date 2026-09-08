@@ -5,6 +5,7 @@ import os from 'os';
 import path from 'path';
 import webpack from 'webpack';
 import util from 'util';
+import { createRequire } from 'node:module';
 const exec = util.promisify(processExec);
 const execFile = util.promisify(processExecFile);
 import { exec as processExec, execFile as processExecFile } from 'child_process';
@@ -13,10 +14,11 @@ import { BundleAnalyzerPlugin } from 'webpack-bundle-analyzer';
 import { PowerBICustomVisualsWebpackPlugin, LocalizationLoader } from 'powerbi-visuals-webpack-plugin';
 import ConsoleWriter from './ConsoleWriter.js';
 import { resolveCertificate } from "./CertificateTools.js";
-import { getRootPath, readJsonFromRoot, readJsonFromVisual } from './utils.js'
+import { readJsonFromRoot, readJsonFromVisual } from './utils.js'
 
 const config = await readJsonFromRoot('config.json');
 const npmPackage = await readJsonFromRoot('package.json');
+const moduleResolver = createRequire(import.meta.url);
 
 const visualPlugin = "visualPlugin.ts";
 const encoding = "utf8";
@@ -122,7 +124,8 @@ export default class WebPackWrap {
             await fs.writeJson(temporaryConfigPath, temporaryConfig);
         }
 
-        const compilerPath = path.join(getRootPath(), "node_modules", "@typescript", "native", "bin", "tsc");
+        const compilerPackagePath = moduleResolver.resolve("@typescript/native/package.json");
+        const compilerPath = path.join(path.dirname(compilerPackagePath), "bin", "tsc");
         await execFile(process.execPath, [compilerPath, "--project", temporaryConfigPath], {
             cwd: visualPackage.basePath
         });
